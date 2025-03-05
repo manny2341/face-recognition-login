@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="header">
+    <div class="header-inner">
+        <div class="logo">👤 Face Recognition Login</div>
+        <div class="subtitle">OpenCV LBPH · Real-Time Face Detection · Webcam Authentication</div>
+    </div>
+</div>
+<div class="container">
+
+    {% if logged_in %}
+    <div class="welcome-banner">
+        <div class="welcome-icon">🔓</div>
+        <div class="welcome-text">Welcome, <strong>{{ logged_in }}</strong>! You are logged in.</div>
+        <button class="btn-logout" onclick="logout()">Log Out</button>
+    </div>
+    {% endif %}
+
+    <div class="tabs">
+        <button class="tab active" id="tab-login" onclick="switchTab('login')">🔐 Login</button>
+        <button class="tab" id="tab-register" onclick="switchTab('register')">➕ Register</button>
+    </div>
+
+    <!-- Login Panel -->
+    <div id="panel-login" class="card">
+        <h2>Face Login</h2>
+        <p class="hint">Look at your camera and click Login.</p>
+        {% if users %}
+        <p class="hint">Registered users: <strong>{{ users | join(", ") }}</strong></p>
+        {% else %}
+        <p class="hint warn">No users registered yet. Go to Register tab first.</p>
+        {% endif %}
+        <div class="webcam-wrap">
+            <video id="login-video" autoplay playsinline></video>
+            <canvas id="login-canvas" style="display:none;"></canvas>
+        </div>
+        <button onclick="loginWithFace()">Login with Face</button>
+        <div id="login-result" style="display:none;"></div>
+    </div>
+
+    <!-- Register Panel -->
+    <div id="panel-register" class="card" style="display:none;">
+        <h2>Register Your Face</h2>
+        <p class="hint">Enter your name, look at the camera, and click Register.</p>
+        <div class="form-group" style="margin-bottom:16px;">
+            <label>Your Name</label>
+            <input type="text" id="reg-name" placeholder="Enter your name">
+        </div>
+        <div class="webcam-wrap">
+            <video id="reg-video" autoplay playsinline></video>
+            <canvas id="reg-canvas" style="display:none;"></canvas>
+        </div>
+        <button onclick="registerFace()">Register Face</button>
+        <div id="reg-result" style="display:none;"></div>
+    </div>
+
+</div>
+
+<script>
+let loginStream = null;
+let regStream = null;
+
+async function startCamera(videoId, streamVar) {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+        document.getElementById(videoId).srcObject = stream;
+        return stream;
+    } catch (e) {
+        alert("Camera access denied. Please allow camera access.");
+        return null;
+    }
+}
+
+function switchTab(tab) {
+    document.getElementById("tab-login").classList.toggle("active", tab === "login");
+    document.getElementById("tab-register").classList.toggle("active", tab === "register");
+    document.getElementById("panel-login").style.display = tab === "login" ? "block" : "none";
+    document.getElementById("panel-register").style.display = tab === "register" ? "block" : "none";
+
+    if (tab === "login" && !loginStream) {
+        startCamera("login-video", "loginStream").then(s => loginStream = s);
+    }
+    if (tab === "register" && !regStream) {
+        startCamera("reg-video", "regStream").then(s => regStream = s);
+    }
+}
+
+function captureFrame(videoId, canvasId) {
+    const video = document.getElementById(videoId);
+    const canvas = document.getElementById(canvasId);
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    return canvas.toDataURL("image/jpeg", 0.8);
+}
+
+async function loginWithFace() {
+    const imageData = captureFrame("login-video", "login-canvas");
+    const res = await fetch("/login", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ image: imageData })
+    });
+    const r = await res.json();
+    const box = document.getElementById("login-result");
+    if (r.success) {
+        box.className = "result-box result-positive";
+        box.innerHTML = `<div class="result-label">🔓 ${r.message}</div><div class="result-prob">Confidence score: ${r.confidence}</div>`;
+        setTimeout(() => location.reload(), 2000);
+    } else {
+        box.className = "result-box result-negative";
+        box.innerHTML = `<div class="result-label">🔒 ${r.message || r.error}</div>${r.confidence ? `<div class="result-prob">Score: ${r.confidence}</div>` : ""}`;
+    }
+    box.style.display = "block";
+}
+
+async function registerFace() {
+    const name = document.getElementById("reg-name").value.trim();
+    if (!name) { alert("Please enter your name."); return; }
+    const imageData = captureFrame("reg-video", "reg-canvas");
+    const res = await fetch("/register", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ username: name, image: imageData })
+    });
+    const r = await res.json();
+    const box = document.getElementById("reg-result");
+    if (r.success) {
+        box.className = "result-box result-positive";
+        box.innerHTML = `<div class="result-label">✅ ${r.message}</div><div class="result-prob">You can now login using your face.</div>`;
+    } else {
+        box.className = "result-box result-negative";
+        box.innerHTML = `<div class="result-label">❌ ${r.error}</div>`;
+    }
+    box.style.display = "block";
+}
+
+async function logout() {
+    await fetch("/logout", { method: "POST" });
+    location.reload();
+}
+
+// Start login camera on load
+window.onload = () => {
+    startCamera("login-video", "loginStream").then(s => loginStream = s);
+};
+</script>
+</body>
+</html>
